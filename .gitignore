@@ -27,6 +27,9 @@ build/
 # Local data
 posts.db
 *.db
+push_to_github.bat
+run.bat
+posts/
 
 # OS
 .DS_Store
