@@ -4,6 +4,7 @@ from tkinter import ttk
 from tkinter import messagebox
 import sqlite3
 import postohtml
+import export_posts_local
 
 
 def connect_to_db():
@@ -74,6 +75,29 @@ def _run_update_thread():
     except Exception as e:
         root.after(0, _on_update_done, e)
 
+def _run_export_thread():
+    """Выполняет экспорт постов в фоне (без подвисания GUI)."""
+    try:
+        exported, skipped = export_posts_local.export_posts(only_new=True)
+        root.after(0, _on_export_done, None, exported, skipped)
+    except Exception as e:
+        root.after(0, _on_export_done, e, 0, 0)
+
+
+def _on_export_done(error, exported: int, skipped: int):
+    if error is None:
+        if exported > 0:
+            messagebox.showinfo("Готово", f"Экспорт завершён. Новых постов: {exported}.")
+        else:
+            messagebox.showinfo("Готово", "Новых постов для экспорта нет.")
+    else:
+        messagebox.showerror("Ошибка", f"Ошибка экспорта постов: {error}")
+
+
+def export_posts():
+    """Старт экспорта (в фоне)."""
+    threading.Thread(target=_run_export_thread, daemon=True).start()
+
 
 def _on_update_done(error):
     """Вызывается в главном потоке после завершения обновления."""
@@ -81,6 +105,9 @@ def _on_update_done(error):
     if error is None:
         messagebox.showinfo("Готово", "Скрипт выполнен успешно!")
         load_data()
+        export_posts()
+
+        
     else:
         messagebox.showerror("Ошибка", f"Ошибка выполнения скрипта: {error}")
 
