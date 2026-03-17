@@ -126,33 +126,40 @@ def parse_posts(posts):
 
     # Вспомогательная функция для обработки отдельного поста (оригинального или репоста)
     def parse_single_post(post_item):
-        # Очистка текста и форматирование времени
         clear_text = remove_emojis(post_item.get("text", ""))
-        utc_time = datetime.fromtimestamp(post_item['date'], tz=timezone.utc)
-        formatted_time = utc_time.astimezone(local_timezone).strftime('%Y-%m-%d %H:%M:%S')
+        utc_time = datetime.fromtimestamp(post_item["date"], tz=timezone.utc)
+        formatted_time = utc_time.astimezone(local_timezone).strftime("%Y-%m-%d %H:%M:%S")
 
-        # Базовая структура поста
         parsed = {
-            "title": post_item['id'],
+            "title": post_item["id"],
             "text": clear_text,
             "date": formatted_time,
-            "image": []
+            "image": [],
         }
 
-        # Обработка изображений
         if "attachments" in post_item:
             for attachment in post_item["attachments"]:
-                if attachment["type"] == "photo":
-                    sizes = attachment.get("photo", {}).get("sizes", [])
-                    if isinstance(sizes, list):
-                        for size in sizes:
-                            if size.get("type") == "x":
-                                parsed["image"].append({
-                                    "url": size["url"],
-                                    "height": size["height"],
-                                    "width": size["width"]
-                                })
-                                break
+                if attachment.get("type") != "photo":
+                    continue
+
+                sizes = attachment.get("photo", {}).get("sizes", [])
+                if not (isinstance(sizes, list) and sizes):
+                    continue
+
+                best = max(
+                    sizes, key=lambda s: (s.get("width") or 0) * (s.get("height") or 0)
+                )
+                url = best.get("url")
+                if not url:
+                    continue
+
+                parsed["image"].append(
+                    {
+                        "url": url,
+                        "height": best.get("height"),
+                        "width": best.get("width"),
+                    }
+                )
 
         return parsed
 
@@ -253,6 +260,22 @@ def sql_insert(posts):
                     "INSERT INTO images (post_id, url, width, height) VALUES (?, ?, ?, ?)",
                     (post_id, image['url'], image['width'], image['height']))
 
+
+def cleanup_old_records():
+    conn = sqlite3.connect("db.sqlite")
+    cursor = conn.cursor()
+
+    border_date = (datetime.now() - timedelta(days=60)).strftime('%Y-%m-%d %H:%M:%S')
+
+    cursor.execute(
+        "DELETE FROM posts WHERE created_at < ?",
+        (border_date,)
+    )
+
+    conn.commit()
+    conn.close()
+
+
 def main():
     try:
         api_key = get_api_key()
@@ -261,6 +284,7 @@ def main():
         parsed_posts = parse_posts(vk_posts)
         sql_insert(parsed_posts)
         remove_duplicates()
+        cleanup_old_records()
 
         print("Posts successfully saved to database.")
 
